@@ -1,0 +1,407 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Free4Talk Bot Dashboard</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;800&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="style.css">
+</head>
+
+<body>
+    <div class="header">
+        <div class="logo">Free4Talk Bot Dashboard</div>
+        <div id="statusBadge" class="status-badge">
+            <div class="status-dot"></div>
+            <span id="statusText">OFFLINE</span>
+        </div>
+    </div>
+
+    <div class="main-content">
+        <div class="left-panel">
+            <div class="card">
+                <div class="card-title">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+                        stroke-linecap="round" stroke-linejoin="round">
+                        <path
+                            d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z" />
+                        <circle cx="12" cy="12" r="3" />
+                    </svg>
+                    Configuration
+                </div>
+                <div class="input-group">
+                    <label>Bot Name</label>
+                    <input type="text" id="botName" placeholder="e.g. Music Bot Pro" value="Music Bot Pro">
+                </div>
+                <div class="input-group">
+                    <label>Room URL</label>
+                    <input type="text" id="roomUrl" placeholder="https://www.free4talk.com/room/..."
+                        value="https://www.free4talk.com/room/Baf63?key=688896">
+                </div>
+                <div class="input-group">
+                    <label>Auth Storage (JSON)</label>
+                    <textarea id="authData" placeholder="Paste your auth_storage.json content here..."></textarea>
+                </div>
+                <button id="startBtn" class="btn btn-primary">Start Bot</button>
+                <button id="stopBtn" class="btn btn-stop hidden">Stop Bot</button>
+            </div>
+
+            <div class="card" style="margin-top: 20px;">
+                <div class="card-title">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+                        stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M9 18V5l12-2v13"></path>
+                        <circle cx="6" cy="18" r="3"></circle>
+                        <circle cx="18" cy="16" r="3"></circle>
+                    </svg>
+                    Now Playing
+                </div>
+                <div id="nowPlaying" class="now-playing">
+                    <div class="song-info">
+                        <div id="songTitle" class="song-title">Nothing playing</div>
+                        <div id="songStatus" class="song-status">Idle</div>
+                    </div>
+                </div>
+                <div class="controls">
+                    <button id="skipBtn" class="control-btn">Skip</button>
+                    <button id="stopMusicBtn" class="control-btn">Stop Music</button>
+                </div>
+                <div class="input-group" style="margin-top: 20px;">
+                    <label>Volume</label>
+                    <input type="range" id="volumeRange" min="0" max="1" step="0.01" value="0.1">
+                </div>
+            </div>
+        </div>
+
+        <div class="right-panel" style="display: flex; flex-direction: column;">
+            <div class="card" style="flex: 1; min-height: 420px; display: flex; flex-direction: column; margin-bottom: 20px;">
+                <div class="card-title">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+                        stroke-linecap="round" stroke-linejoin="round">
+                        <polyline points="4 17 10 11 4 5"></polyline>
+                        <line x1="12" y1="19" x2="20" y2="19"></line>
+                    </svg>
+                    Live Logs
+                </div>
+                <div id="console" class="console" style="flex: 1;"></div>
+
+                <div class="input-group" style="margin-top: 20px; margin-bottom: 0;">
+                    <label>Quick Command</label>
+                    <div style="display: flex; gap: 10px;">
+                        <input type="text" id="cmdInput" placeholder="!play song name...">
+                        <button id="sendCmdBtn" class="btn btn-primary"
+                            style="width: auto; padding: 0 20px;">Send</button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Command Cheat Sheet / Reference Card -->
+            <div class="card" style="display: flex; flex-direction: column;">
+                <div class="card-title" style="margin-bottom: 15px;">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+                        stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"></path>
+                        <path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"></path>
+                    </svg>
+                    Interactive Command Reference
+                </div>
+
+                <div class="cmd-tabs">
+                    <button class="tab-btn active" data-tab="tab-music">🎵 Music</button>
+                    <button class="tab-btn" data-tab="tab-voice">🎙️ Voice & AI</button>
+                    <button class="tab-btn" data-tab="tab-fx">🎛️ Audio FX</button>
+                    <button class="tab-btn" data-tab="tab-econ">🎰 Economy</button>
+                    <button class="tab-btn" data-tab="tab-rpg">⚔️ RPG/Grind</button>
+                </div>
+
+                <!-- Tab content containers -->
+                <div class="tab-content active" id="tab-music">
+                    <div class="cmd-item">
+                        <div class="cmd-name">!play [title]</div>
+                        <div class="cmd-desc">Play music from YouTube by search query or URL.</div>
+                        <div class="cmd-actions">
+                            <button class="cmd-action-btn btn-fill" onclick="fillCmd('!play ')">Fill</button>
+                            <button class="cmd-action-btn btn-run" onclick="runCmd('!play lofi')">Lofi</button>
+                        </div>
+                    </div>
+                    <div class="cmd-item">
+                        <div class="cmd-name">!search [query]</div>
+                        <div class="cmd-desc">Search top 10 songs on YouTube to select and play.</div>
+                        <div class="cmd-actions">
+                            <button class="cmd-action-btn btn-fill" onclick="fillCmd('!search ')">Fill</button>
+                            <button class="cmd-action-btn btn-run" onclick="runCmd('!search pop')">Pop</button>
+                        </div>
+                    </div>
+                    <div class="cmd-item">
+                        <div class="cmd-name">!skip / !s</div>
+                        <div class="cmd-desc">Skip the currently playing song to the next in queue.</div>
+                        <div class="cmd-actions">
+                            <button class="cmd-action-btn btn-fill" onclick="fillCmd('!skip')">Fill</button>
+                            <button class="cmd-action-btn btn-run" onclick="runCmd('!skip')">Run</button>
+                        </div>
+                    </div>
+                    <div class="cmd-item">
+                        <div class="cmd-name">!stop</div>
+                        <div class="cmd-desc">Stop audio playback and clear the playlist queue completely.</div>
+                        <div class="cmd-actions">
+                            <button class="cmd-action-btn btn-fill" onclick="fillCmd('!stop')">Fill</button>
+                            <button class="cmd-action-btn btn-run" onclick="runCmd('!stop')">Run</button>
+                        </div>
+                    </div>
+                    <div class="cmd-item">
+                        <div class="cmd-name">!queue / !q</div>
+                        <div class="cmd-desc">View the list of scheduled songs in the music queue.</div>
+                        <div class="cmd-actions">
+                            <button class="cmd-action-btn btn-fill" onclick="fillCmd('!queue')">Fill</button>
+                            <button class="cmd-action-btn btn-run" onclick="runCmd('!queue')">Run</button>
+                        </div>
+                    </div>
+                    <div class="cmd-item">
+                        <div class="cmd-name">!np</div>
+                        <div class="cmd-desc">Show details and a progress bar of the currently playing song.</div>
+                        <div class="cmd-actions">
+                            <button class="cmd-action-btn btn-fill" onclick="fillCmd('!np')">Fill</button>
+                            <button class="cmd-action-btn btn-run" onclick="runCmd('!np')">Run</button>
+                        </div>
+                    </div>
+                    <div class="cmd-item">
+                        <div class="cmd-name">!repeat / !r</div>
+                        <div class="cmd-desc">Toggle song repeat mode ON or OFF for continuous loop.</div>
+                        <div class="cmd-actions">
+                            <button class="cmd-action-btn btn-fill" onclick="fillCmd('!repeat')">Fill</button>
+                            <button class="cmd-action-btn btn-run" onclick="runCmd('!repeat')">Run</button>
+                        </div>
+                    </div>
+                    <div class="cmd-item">
+                        <div class="cmd-name">!vol [1-100/max/min]</div>
+                        <div class="cmd-desc">Adjust the bot playback volume dynamically.</div>
+                        <div class="cmd-actions">
+                            <button class="cmd-action-btn btn-fill" onclick="fillCmd('!vol ')">Fill</button>
+                            <button class="cmd-action-btn btn-run" onclick="runCmd('!vol max')">Max</button>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="tab-content" id="tab-voice">
+                    <div class="cmd-item">
+                        <div class="cmd-name">!talkmode [on/off]</div>
+                        <div class="cmd-desc">Toggle real-time voice wake-word listening on or off.</div>
+                        <div class="cmd-actions">
+                            <button class="cmd-action-btn btn-fill" onclick="fillCmd('!talkmode ')">Fill</button>
+                            <button class="cmd-action-btn btn-run" onclick="runCmd('!talkmode on')">On</button>
+                        </div>
+                    </div>
+                    <div class="cmd-item">
+                        <div class="cmd-name">!voice</div>
+                        <div class="cmd-desc">Get current voice synthesis, listening status, and keys.</div>
+                        <div class="cmd-actions">
+                            <button class="cmd-action-btn btn-fill" onclick="fillCmd('!voice')">Fill</button>
+                            <button class="cmd-action-btn btn-run" onclick="runCmd('!voice')">Run</button>
+                        </div>
+                    </div>
+                    <div class="cmd-item">
+                        <div class="cmd-name">!voiceai [on/off]</div>
+                        <div class="cmd-desc">Let bot speak AI replies out loud over mic instead of text.</div>
+                        <div class="cmd-actions">
+                            <button class="cmd-action-btn btn-fill" onclick="fillCmd('!voiceai ')">Fill</button>
+                            <button class="cmd-action-btn btn-run" onclick="runCmd('!voiceai on')">On</button>
+                        </div>
+                    </div>
+                    <div class="cmd-item">
+                        <div class="cmd-name">!voiceai [guy/aria]</div>
+                        <div class="cmd-desc">Switch between Male (guy) and Female (aria) US English.</div>
+                        <div class="cmd-actions">
+                            <button class="cmd-action-btn btn-fill" onclick="fillCmd('!voiceai ')">Fill</button>
+                            <button class="cmd-action-btn btn-run" onclick="runCmd('!voiceai guy')">Guy</button>
+                        </div>
+                    </div>
+                    <div class="cmd-item">
+                        <div class="cmd-name">!voiceai pitch [baby/giant]</div>
+                        <div class="cmd-desc">Change pitch to funny high-pitched or deep scary styles.</div>
+                        <div class="cmd-actions">
+                            <button class="cmd-action-btn btn-fill" onclick="fillCmd('!voiceai pitch ')">Fill</button>
+                            <button class="cmd-action-btn btn-run" onclick="runCmd('!voiceai pitch baby')">Baby</button>
+                        </div>
+                    </div>
+                    <div class="cmd-item">
+                        <div class="cmd-name">!ai [on/off/sleep]</div>
+                        <div class="cmd-desc">Mute or unmute casual/random AI chat interjections.</div>
+                        <div class="cmd-actions">
+                            <button class="cmd-action-btn btn-fill" onclick="fillCmd('!ai ')">Fill</button>
+                            <button class="cmd-action-btn btn-run" onclick="runCmd('!ai status')">Status</button>
+                        </div>
+                    </div>
+                    <div class="cmd-item">
+                        <div class="cmd-name">!quiet / !unmute</div>
+                        <div class="cmd-desc">Quickly quiet/silence the AI, or unmute it back.</div>
+                        <div class="cmd-actions">
+                            <button class="cmd-action-btn btn-fill" onclick="fillCmd('!quiet')">Fill</button>
+                            <button class="cmd-action-btn btn-run" onclick="runCmd('!quiet')">Quiet</button>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="tab-content" id="tab-fx">
+                    <div class="cmd-item">
+                        <div class="cmd-name">!bass [0-20]</div>
+                        <div class="cmd-desc">Apply low-frequency gain filters to boost bass.</div>
+                        <div class="cmd-actions">
+                            <button class="cmd-action-btn btn-fill" onclick="fillCmd('!bass ')">Fill</button>
+                            <button class="cmd-action-btn btn-run" onclick="runCmd('!bass 12')">Bass</button>
+                        </div>
+                    </div>
+                    <div class="cmd-item">
+                        <div class="cmd-name">!treble [0-20]</div>
+                        <div class="cmd-desc">Apply high-frequency gain filters to boost treble.</div>
+                        <div class="cmd-actions">
+                            <button class="cmd-action-btn btn-fill" onclick="fillCmd('!treble ')">Fill</button>
+                            <button class="cmd-action-btn btn-run" onclick="runCmd('!treble 10')">Treble</button>
+                        </div>
+                    </div>
+                    <div class="cmd-item">
+                        <div class="cmd-name">!reverb</div>
+                        <div class="cmd-desc">Toggle the virtual convolver/reverberation effect.</div>
+                        <div class="cmd-actions">
+                            <button class="cmd-action-btn btn-fill" onclick="fillCmd('!reverb')">Fill</button>
+                            <button class="cmd-action-btn btn-run" onclick="runCmd('!reverb')">Run</button>
+                        </div>
+                    </div>
+                    <div class="cmd-item">
+                        <div class="cmd-name">!8d</div>
+                        <div class="cmd-desc">Toggle 8D rotating panning surrounding sound effect.</div>
+                        <div class="cmd-actions">
+                            <button class="cmd-action-btn btn-fill" onclick="fillCmd('!8d')">Fill</button>
+                            <button class="cmd-action-btn btn-run" onclick="runCmd('!8d')">Run</button>
+                        </div>
+                    </div>
+                    <div class="cmd-item">
+                        <div class="cmd-name">!nightcore</div>
+                        <div class="cmd-desc">Toggle high speed and pitch nightcore music mode.</div>
+                        <div class="cmd-actions">
+                            <button class="cmd-action-btn btn-fill" onclick="fillCmd('!nightcore')">Fill</button>
+                            <button class="cmd-action-btn btn-run" onclick="runCmd('!nightcore')">Run</button>
+                        </div>
+                    </div>
+                    <div class="cmd-item">
+                        <div class="cmd-name">!slowed</div>
+                        <div class="cmd-desc">Toggle chopped and slowed chill reverb sound effect.</div>
+                        <div class="cmd-actions">
+                            <button class="cmd-action-btn btn-fill" onclick="fillCmd('!slowed')">Fill</button>
+                            <button class="cmd-action-btn btn-run" onclick="runCmd('!slowed')">Run</button>
+                        </div>
+                    </div>
+                    <div class="cmd-item">
+                        <div class="cmd-name">!fxreset</div>
+                        <div class="cmd-desc">Clear all applied audio filters and reset to default.</div>
+                        <div class="cmd-actions">
+                            <button class="cmd-action-btn btn-fill" onclick="fillCmd('!fxreset')">Fill</button>
+                            <button class="cmd-action-btn btn-run" onclick="runCmd('!fxreset')">Run</button>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="tab-content" id="tab-econ">
+                    <div class="cmd-item">
+                        <div class="cmd-name">!daily</div>
+                        <div class="cmd-desc">Claim your daily allowance of free economy coins.</div>
+                        <div class="cmd-actions">
+                            <button class="cmd-action-btn btn-fill" onclick="fillCmd('!daily')">Fill</button>
+                            <button class="cmd-action-btn btn-run" onclick="runCmd('!daily')">Run</button>
+                        </div>
+                    </div>
+                    <div class="cmd-item">
+                        <div class="cmd-name">!balance / !bal</div>
+                        <div class="cmd-desc">Check your wallet and bank statement balances.</div>
+                        <div class="cmd-actions">
+                            <button class="cmd-action-btn btn-fill" onclick="fillCmd('!bal')">Fill</button>
+                            <button class="cmd-action-btn btn-run" onclick="runCmd('!bal')">Run</button>
+                        </div>
+                    </div>
+                    <div class="cmd-item">
+                        <div class="cmd-name">!leaderboard / !lb</div>
+                        <div class="cmd-desc">Show the richest active room members in the community.</div>
+                        <div class="cmd-actions">
+                            <button class="cmd-action-btn btn-fill" onclick="fillCmd('!lb')">Fill</button>
+                            <button class="cmd-action-btn btn-run" onclick="runCmd('!lb')">Run</button>
+                        </div>
+                    </div>
+                    <div class="cmd-item">
+                        <div class="cmd-name">!slot [amount]</div>
+                        <div class="cmd-desc">Place your bet on a triple multiplier slot machine.</div>
+                        <div class="cmd-actions">
+                            <button class="cmd-action-btn btn-fill" onclick="fillCmd('!slot ')">Fill</button>
+                            <button class="cmd-action-btn btn-run" onclick="runCmd('!slot 10')">10 Coins</button>
+                        </div>
+                    </div>
+                    <div class="cmd-item">
+                        <div class="cmd-name">!flip [heads/tails]</div>
+                        <div class="cmd-desc">Double your wager in a simple coin flip mini-game.</div>
+                        <div class="cmd-actions">
+                            <button class="cmd-action-btn btn-fill" onclick="fillCmd('!flip ')">Fill</button>
+                            <button class="cmd-action-btn btn-run" onclick="runCmd('!flip heads 10')">Flip</button>
+                        </div>
+                    </div>
+                    <div class="cmd-item">
+                        <div class="cmd-name">!gacha</div>
+                        <div class="cmd-desc">Spend coins to pull and roll items from the gacha pool.</div>
+                        <div class="cmd-actions">
+                            <button class="cmd-action-btn btn-fill" onclick="fillCmd('!gacha')">Fill</button>
+                            <button class="cmd-action-btn btn-run" onclick="runCmd('!gacha')">Run</button>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="tab-content" id="tab-rpg">
+                    <div class="cmd-item">
+                        <div class="cmd-name">!hunt</div>
+                        <div class="cmd-desc">Embark on a local hunt for items, XP, and gold.</div>
+                        <div class="cmd-actions">
+                            <button class="cmd-action-btn btn-fill" onclick="fillCmd('!hunt')">Fill</button>
+                            <button class="cmd-action-btn btn-run" onclick="runCmd('!hunt')">Run</button>
+                        </div>
+                    </div>
+                    <div class="cmd-item">
+                        <div class="cmd-name">!adventure</div>
+                        <div class="cmd-desc">Venture into hazardous dungeons for premium loot.</div>
+                        <div class="cmd-actions">
+                            <button class="cmd-action-btn btn-fill" onclick="fillCmd('!adventure')">Fill</button>
+                            <button class="cmd-action-btn btn-run" onclick="runCmd('!adventure')">Run</button>
+                        </div>
+                    </div>
+                    <div class="cmd-item">
+                        <div class="cmd-name">!shop</div>
+                        <div class="cmd-desc">Browse goods, custom weapons, and status boosts for sale.</div>
+                        <div class="cmd-actions">
+                            <button class="cmd-action-btn btn-fill" onclick="fillCmd('!shop')">Fill</button>
+                            <button class="cmd-action-btn btn-run" onclick="runCmd('!shop')">Run</button>
+                        </div>
+                    </div>
+                    <div class="cmd-item">
+                        <div class="cmd-name">!inv / !inventory</div>
+                        <div class="cmd-desc">Check your collected weapons, potions, and equipment.</div>
+                        <div class="cmd-actions">
+                            <button class="cmd-action-btn btn-fill" onclick="fillCmd('!inv')">Fill</button>
+                            <button class="cmd-action-btn btn-run" onclick="runCmd('!inv')">Run</button>
+                        </div>
+                    </div>
+                    <div class="cmd-item">
+                        <div class="cmd-name">!mine / !fish / !chop</div>
+                        <div class="cmd-desc">Run specific gathering activities to gain materials.</div>
+                        <div class="cmd-actions">
+                            <button class="cmd-action-btn btn-fill" onclick="fillCmd('!mine')">Mine</button>
+                            <button class="cmd-action-btn btn-run" onclick="runCmd('!fish')">Fish</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="/socket.io/socket.io.js"></script>
+    <script src="script.js"></script>
+</body>
+
+</html>

@@ -194,7 +194,7 @@ let botState = {
     searchResults: [],
     isPlaying: false,
     isRepeating: false,
-    volume: 80,
+    volume: 55,
     botName: 'Past',
     participants: [],  // [{uid, name, role}] — real-time room list
     aiMuteUntil: 0,   // timestamp ms; 0 = AI aktif, >now = AI di-mute (set via !ai off/sleep)
@@ -1261,7 +1261,7 @@ async function startStream(song) {
             audio.load();
             audio.volume = 1.0;
             if (typeof window.setBotVolume === 'function') {
-                window.setBotVolume(window._botVolumePct || 80);
+                window.setBotVolume(window._botVolumePct || 55);
             }
             audio.preload = 'auto';
 
@@ -1486,21 +1486,27 @@ async function startBot(config) {
             window._audioElement.autoplay = true;
             window._audioElement.preload = 'auto';
             window._audioElement.volume = 1.0;
-            window._botVolumePct = 80;
-            window._botVolume = 1.0;
+            window._botVolumePct = 55;
 
-            // Master gain — HTML audio.volume caps at 1.0; boost through WebRTC mic chain
+            // Master gain + compressor — loud enough for room, no clipping/distortion
             window._masterGain = window._audioCtx.createGain();
+            window._compressor = window._audioCtx.createDynamicsCompressor();
+            window._compressor.threshold.value = -20;
+            window._compressor.knee.value = 18;
+            window._compressor.ratio.value = 3;
+            window._compressor.attack.value = 0.003;
+            window._compressor.release.value = 0.2;
+
             window.setBotVolume = function (pct) {
                 const p = Math.max(1, Math.min(100, Number(pct) || 10)) / 100;
                 window._botVolumePct = Math.round(p * 100);
-                window._audioElement.volume = 1.0;
-                // 1% ≈ quiet, 100% ≈ 3x gain (actually loud in room)
-                const gain = 0.25 + Math.pow(p, 0.8) * 2.75;
-                window._masterGain.gain.value = gain;
-                window._botVolume = gain;
+                // Primary volume on element (clean)
+                window._audioElement.volume = Math.min(1, 0.15 + p * 0.85);
+                // Small WebRTC mic boost only — max ~1.2x, not 3x
+                window._masterGain.gain.value = 0.55 + p * 0.65;
+                window._botVolume = window._masterGain.gain.value;
             };
-            window.setBotVolume(80);
+            window.setBotVolume(55);
 
             // Route audio element through Web Audio pipeline → virtual mic
             const source = window._audioCtx.createMediaElementSource(window._audioElement);
@@ -1547,7 +1553,8 @@ async function startBot(config) {
             })(3, 5);
 
             source.connect(window._masterGain);
-            window._masterGain.connect(window._bassFilter);
+            window._masterGain.connect(window._compressor);
+            window._compressor.connect(window._bassFilter);
             window._bassFilter.connect(window._trebleFilter);
             window._trebleFilter.connect(window._pannerNode);
             window._pannerNode.connect(window._dryGain);
@@ -2321,7 +2328,7 @@ async function startBot(config) {
         if (page) {
             await page.evaluate(p => {
                 if (window.setBotVolume) window.setBotVolume(p);
-            }, botState.volume || 80).catch(() => { });
+            }, botState.volume || 55).catch(() => { });
         }
         log('Bot is ONLINE and active!', 'success');
         log('Real-time WS chat listener is active.', 'success');
@@ -2528,7 +2535,7 @@ if (process.send) {
         }
 
         if (msg.type === 'set-volume') {
-            const pct = Math.max(1, Math.min(100, parseInt(msg.volume, 10) || 80));
+            const pct = Math.max(1, Math.min(100, parseInt(msg.volume, 10) || 55));
             botState.volume = pct;
             if (page) await page.evaluate(p => {
                 if (window.setBotVolume) window.setBotVolume(p);

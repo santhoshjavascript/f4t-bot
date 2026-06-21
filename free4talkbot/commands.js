@@ -301,7 +301,7 @@ module.exports = async function handleCommand(msg, { botState, sendMessage, addT
         if (rawArg.startsWith('+') || rawArg.startsWith('-')) {
             const delta = parseInt(rawArg, 10);
             if (!isNaN(delta)) {
-                const pct = Math.max(1, Math.min(100, (botState.volume || 80) + delta));
+                const pct = Math.max(1, Math.min(100, (botState.volume || 55) + delta));
                 botState.volume = pct;
                 await applyVolume(page, pct);
                 updateStatus();

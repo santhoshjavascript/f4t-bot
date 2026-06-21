@@ -69,6 +69,14 @@ function loadPlugins() {
 }
 loadPlugins();
 
+async function applyVolume(page, pct) {
+    if (!page) return;
+    await page.evaluate(p => {
+        if (typeof window.setBotVolume === 'function') window.setBotVolume(p);
+        else if (window._audioElement) window._audioElement.volume = p / 100;
+    }, pct).catch(() => { });
+}
+
 module.exports = async function handleCommand(msg, { botState, sendMessage, addToQueue, playNext, log, updateStatus, page, sender, speakTTS, isTTSBusy, clearPendingSongRequests }) {
     if (!msg || typeof msg !== 'string') return;
 
@@ -277,37 +285,25 @@ module.exports = async function handleCommand(msg, { botState, sendMessage, addT
     else if (cmd === '!vol') {
         const rawArg = (args || '').trim().toLowerCase();
 
-        // !vol max / !vol min shortcuts
         if (rawArg === 'max') {
             botState.volume = 100;
-            if (page) await page.evaluate(v => {
-                if (window._audioElement) window._audioElement.volume = v;
-                window._botVolume = v;
-            }, 1.0);
+            await applyVolume(page, 100);
             updateStatus();
             return await sendMessage(`🔊 Volume: 100% (MAX)`);
         }
         if (rawArg === 'min') {
             botState.volume = 1;
-            if (page) await page.evaluate(v => {
-                if (window._audioElement) window._audioElement.volume = v;
-                window._botVolume = v;
-            }, 0.01);
+            await applyVolume(page, 1);
             updateStatus();
             return await sendMessage(`🔊 Volume: 1% (MIN)`);
         }
 
-        // !vol +N or !vol -N — increment/decrement
         if (rawArg.startsWith('+') || rawArg.startsWith('-')) {
             const delta = parseInt(rawArg, 10);
             if (!isNaN(delta)) {
-                const pct  = Math.max(1, Math.min(100, (botState.volume || 10) + delta));
-                const frac = pct / 100;
+                const pct = Math.max(1, Math.min(100, (botState.volume || 80) + delta));
                 botState.volume = pct;
-                if (page) await page.evaluate(v => {
-                    if (window._audioElement) window._audioElement.volume = v;
-                    window._botVolume = v;
-                }, frac);
+                await applyVolume(page, pct);
                 updateStatus();
                 return await sendMessage(`🔊 Volume: ${pct}%`);
             }
@@ -315,17 +311,12 @@ module.exports = async function handleCommand(msg, { botState, sendMessage, addT
 
         const n = parseInt(rawArg, 10);
         if (isNaN(n)) {
-            return await sendMessage(`🔊 Current volume: ${botState.volume}%\nUse: !vol [1-100] | !vol +10 | !vol -10 | !vol max | !vol min`);
+            return await sendMessage(`🔊 Current volume: ${botState.volume}%\nUse: !vol [1-100] | !vol +10 | !vol -10 | !volmax | !vol min`);
         }
 
         const pct = Math.max(1, Math.min(100, n));
-        const frac = pct / 100;
-
         botState.volume = pct;
-        if (page) await page.evaluate(v => {
-            if (window._audioElement) window._audioElement.volume = v;
-            window._botVolume = v;
-        }, frac);
+        await applyVolume(page, pct);
         updateStatus();
         await sendMessage(`🔊 Volume: ${pct}%`);
     }

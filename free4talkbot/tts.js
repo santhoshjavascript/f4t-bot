@@ -85,17 +85,62 @@ function sanitize(text) {
 }
 
 /**
+ * Format AI/chat text for natural spoken delivery.
+ * Strips slang TTS reads badly and expands chat abbreviations.
+ */
+function prepareTextForSpeech(text) {
+    let s = String(text || '').trim();
+    if (!s) return '';
+
+    s = s.replace(/\[CMD:[^\]]*\]/g, '');
+    s = s.replace(/[\u{1F000}-\u{1FFFF}]/gu, '');
+    s = s.replace(/[\u{2600}-\u{27BF}]/gu, '');
+    s = s.replace(/[\u{2B00}-\u{2BFF}]/gu, '');
+
+    s = s.replace(/\b(lol|lmao|lmfao|rofl|bruh|fr|ngl|tbh|smh|wtf|tf|omg|btw|imo|imho|fyi|nah|yep|nope)\b/gi, '');
+
+    const expansions = [
+        [/\bidk\b/gi, "I don't know"],
+        [/\bimo\b/gi, 'in my opinion'],
+        [/\bpls\b/gi, 'please'],
+        [/\bplz\b/gi, 'please'],
+        [/\bthx\b/gi, 'thanks'],
+        [/\bty\b/gi, 'thank you'],
+        [/\bur\b/gi, 'your'],
+        [/\bu\b/gi, 'you'],
+        [/\br\b/gi, 'are'],
+        [/\bcuz\b/gi, 'because'],
+        [/\bcos\b/gi, 'because'],
+        [/\bgonna\b/gi, 'going to'],
+        [/\bwanna\b/gi, 'want to'],
+        [/\bgotta\b/gi, 'got to'],
+        [/\bkinda\b/gi, 'kind of'],
+        [/\bsorta\b/gi, 'sort of'],
+    ];
+    for (const [re, rep] of expansions) s = s.replace(re, rep);
+
+    s = s.replace(/\s{2,}/g, ' ').replace(/\s+([,.!?])/g, '$1').trim();
+    if (!s) return '';
+
+    s = s.charAt(0).toUpperCase() + s.slice(1);
+    if (!/[.!?…]$/.test(s)) s += '.';
+
+    return s;
+}
+
+/**
  * Generate audio MP3 dari text.
  * @param {string} text - kalimat yang mau diucapkan
  * @param {object} opts - { voice?: 'ardi'|'gadis'|'aria'|'guy'|..., rate?: '0%'|'+10%'|..., pitch?: '+0Hz'|...}
  * @returns {Promise<Buffer>} MP3 buffer
  */
 async function generateTTS(text, opts = {}) {
-    const clean = sanitize(text);
+    const spoken = prepareTextForSpeech(text);
+    const clean = sanitize(spoken || text);
     if (!clean) throw new Error('TTS: empty text after sanitization');
 
     // 1. Determine gender based on voice option (guy/male = male, otherwise female)
-    const rawVoice = (opts.voice || 'aria').toLowerCase();
+    const rawVoice = (opts.voice || 'guy').toLowerCase();
     const isMale = rawVoice === 'guy' || rawVoice.endsWith('_male') || rawVoice === 'ardi';
     const gender = isMale ? 'male' : 'female';
 
@@ -156,5 +201,6 @@ async function generateTTS(text, opts = {}) {
 
 module.exports = {
     generateTTS,
+    prepareTextForSpeech,
     VOICES,
 };

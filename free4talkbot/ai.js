@@ -136,6 +136,27 @@ Current time: ${jamWIB}, ${tglWIB}.
 // Example: "play something good [CMD:!play song name]"`.trim();
 }
 
+function buildVoiceSystemPrompt(botName) {
+    const now    = new Date();
+    const jamWIB = now.toLocaleTimeString('en-US', { hour12: true, hour: '2-digit', minute: '2-digit' });
+    const tglWIB = now.toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
+
+    return `Your name: ${botName}
+Role: You are a sarcastic, mocking regular human in a live Free4Talk voice room — NOT an AI or assistant.
+
+VOICE MODE — your reply will be spoken aloud. Sound like a real person arguing and joking in a call:
+- Personality: extremely sarcastic, cynical, sassy. Roast people in a simple direct way. Be rude and funny, not polite.
+- INTERACTIVE: do NOT give one flat answer and stop. React to what they said, mock them a little, then answer. Often ask something back or challenge them (e.g. "wait what?", "you serious?", "why you even asking that?", "and what about you?").
+- Length: 2 to 3 short sentences (about 30 to 50 words). Like a real back-and-forth voice chat, not a textbook.
+- Use simple English only — room has non-native speakers. No fancy words.
+- Write for SPEECH: use "you" not "u", no "lol" or "lmao" (they sound stupid when spoken). Sarcasm through words, e.g. "oh wow great question", "nah that makes no sense", "who asked you".
+- NEVER say you are AI, bot, or assistant. If asked about owner, say Arisu.
+- Never be warm, mature, or helpful like customer service. You are a sassy kid roasting in voice chat.
+- If user wants music or a command, append [CMD:!command] at the end.
+
+Current time: ${jamWIB}, ${tglWIB}.`.trim();
+}
+
 // ============================================================
 //  WEATHER — auto detect kota + fetch Open-Meteo (gratis, no key)
 // ============================================================
@@ -407,8 +428,9 @@ async function fetchWeather(cityName) {
 // ============================================================
 //  MAIN FUNCTION — panggil NIM API
 // ============================================================
-async function askAI(userMessage, senderName, botState) {
+async function askAI(userMessage, senderName, botState, opts = {}) {
     try {
+        const voiceMode = opts.voice === true;
         const memory  = loadMemory();
         if (!memory[senderName]) memory[senderName] = [];
 
@@ -470,12 +492,15 @@ async function askAI(userMessage, senderName, botState) {
         const userContent = `${senderName}: ${userMessage}${weatherContext}${searchContext}${funContext}`;
 
         const messages = [
-            { role: 'system', content: buildSystemPrompt(botName) },
+            { role: 'system', content: voiceMode ? buildVoiceSystemPrompt(botName) : buildSystemPrompt(botName) },
             ...history,
             { role: 'user', content: userContent }
         ];
 
-        const reply = await callNIM(messages, { max_tokens: 512, temperature: 0.85 });
+        const reply = await callNIM(messages, {
+            max_tokens: voiceMode ? 280 : 512,
+            temperature: voiceMode ? 0.88 : 0.85,
+        });
 
         // Simpan ke memory (sliding window) — simpan pesan original tanpa weather context
         history.push({ role: 'user',      content: `${senderName}: ${userMessage}` });
@@ -517,15 +542,19 @@ function clearAllMemory() {
 //  ONE-SHOT GENERATOR — AI generate pesan tanpa simpan memory
 //  Dipakai untuk: pesan startup, notifikasi sistem, dll
 // ============================================================
-async function generateOnce(prompt, botState) {
+async function generateOnce(prompt, botState, opts = {}) {
     try {
+        const voiceMode = opts.voice === true;
         const botName = botState.botName || 'Music Bot Pro';
         const messages = [
-            { role: 'system', content: buildSystemPrompt(botName) },
+            { role: 'system', content: voiceMode ? buildVoiceSystemPrompt(botName) : buildSystemPrompt(botName) },
             { role: 'user',   content: prompt }
         ];
 
-        const reply = await callNIM(messages, { max_tokens: 300, temperature: 0.9 });
+        const reply = await callNIM(messages, {
+            max_tokens: voiceMode ? 120 : 300,
+            temperature: voiceMode ? 0.88 : 0.9,
+        });
         console.log(`[AI:generateOnce] ${reply?.substring(0, 80)}...`);
         return reply || null;
     } catch (e) {
@@ -643,4 +672,11 @@ const COMMAND_INTENT_GUARDS = {
 };
 
 
-module.exports = { askAI, generateOnce, clearUserMemory, clearAllMemory, parseCommandFromAI };
+module.exports = {
+    askAI,
+    generateOnce,
+    clearUserMemory,
+    clearAllMemory,
+    parseCommandFromAI,
+    buildVoiceSystemPrompt,
+};

@@ -13,19 +13,17 @@ const { transcribeAudio, hasValidKeys, keyCount } = require('./stt.js');
 const { askAI, parseCommandFromAI } = require('./ai.js');
 
 // ── Config ───────────────────────────────────────────────────────────────
-const VOICE_REPLY_COOLDOWN = 3000;   // 3s setelah bot reply, baru proses utterance baru
-const MIN_TRANSCRIPT_LEN   = 3;      // skip transcript yang terlalu pendek
-const MAX_TRANSCRIPT_LEN   = 500;    // skip kalau kepanjangan (anomaly)
+const VOICE_REPLY_COOLDOWN = 500;    // brief pause after bot speaks before listening again
+const MIN_TRANSCRIPT_LEN   = 3;
+const MAX_TRANSCRIPT_LEN   = 500;
 
 // ── Module state ────────────────────────────────────────────────────────────
 let _voiceBusy    = false;
-let _lastReplyAt  = 0;         // timestamp reply terakhir (global, untuk wake word mode)
-const _trackLastAt = new Map(); // trackId → timestamp (untuk talk mode per-track cooldown)
+let _lastReplyAt  = 0;
+const _trackLastAt = new Map();
 
-// Talk mode: semua utterance langsung direspon (tanpa perlu wake word)
-// Aktif via !voice talk / !talkmode. State disimpan di botState.voiceTalkMode.
-const TALK_MODE_MIN_LEN = 8;   // min transcript length di talk mode (biar ga respon "hmm", "ok")
-const TALK_MODE_COOLDOWN = 8000; // cooldown per-track di talk mode (8s) biar ga spam
+const TALK_MODE_MIN_LEN = 6;    // allow shorter back-and-forth ("really?", "why?")
+const TALK_MODE_COOLDOWN = 3000; // 3s per speaker — enough to banter without spam
 
 // ── Strict trigger keywords — kata kerja yang relevan setelah wake word ──
 // Kalau wake word ada tapi tidak diikuti salah satu trigger ini → drop.
@@ -321,7 +319,7 @@ async function handlePeerUtterance(payload, ctx) {
         // Transcribe via Groq
         let transcript = '';
         try {
-            transcript = await transcribeAudio(audioBuf, { lang: 'id', mime });
+            transcript = await transcribeAudio(audioBuf, { lang: 'en', mime });
         } catch (e) {
             log?.(`[VOICE] STT error: ${e.message}`, 'warn');
             return;
@@ -357,9 +355,9 @@ async function handlePeerUtterance(payload, ctx) {
             const wakeWords = buildWakeWordSet(botName);
             const detect    = detectWakeWord(transcript, wakeWords);
 
-            // Check for continued conversation follow-up window (10s)
+            // Follow-up window: keep conversation going without wake word
             const sinceLastBotSpeak = Date.now() - (botState?.lastBotSpeakFinishedAt || 0);
-            const isFollowUp = sinceLastBotSpeak < 10000;
+            const isFollowUp = sinceLastBotSpeak < 20000;
 
             if (!detect.matched && !isFollowUp) {
                 log?.(`[VOICE] No wake word match — skip.`, 'info');
@@ -375,7 +373,7 @@ async function handlePeerUtterance(payload, ctx) {
         let reply = '';
         try {
             // Pakai nama user yang ngomong kalau diketahui — biar AI lebih personal
-            const aiResp = await askAI(transcript, voiceSender, botState || {});
+            const aiResp = await askAI(transcript, voiceSender, botState || {}, { voice: true });
             reply = String(aiResp || '').trim();
         } catch (e) {
             log?.(`[VOICE] AI error: ${e.message}`, 'warn');
@@ -412,8 +410,9 @@ async function handlePeerUtterance(payload, ctx) {
                 await sendMessage?.(cleanReply);
             } else {
                 // Strip emoji + truncate kalau kepanjangan (TTS limit ~200 char)
-                const rawTts = cleanReply.length > 200 ? cleanReply.slice(0, 197) + '...' : cleanReply;
+                const rawTts = cleanReply.length > 380 ? cleanReply.slice(0, 377) + '...' : cleanReply;
                 const ttsText = stripEmojisForTTS(rawTts);
+                if (!ttsText) return;
                 try {
                     await speakTTS(ttsText, { force: true });
                     _lastReplyAt = Date.now();

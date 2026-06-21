@@ -5,9 +5,9 @@ module.exports = {
 
     handle: async (cmd, args, msg, { botState, sendMessage, speakTTS }) => {
         if (botState.voiceAI === undefined) botState.voiceAI = false;
-        if (botState.voiceAIVoice === undefined) botState.voiceAIVoice = 'aria';
-        if (botState.voiceAIPitch === undefined) botState.voiceAIPitch = '+15Hz';
-        if (botState.voiceAIRate === undefined) botState.voiceAIRate = '+10%';
+        if (botState.voiceAIVoice === undefined) botState.voiceAIVoice = 'guy';
+        if (botState.voiceAIPitch === undefined) botState.voiceAIPitch = '-5Hz';
+        if (botState.voiceAIRate === undefined) botState.voiceAIRate = '-5%';
 
         const tokens = args.trim().toLowerCase().split(/\s+/);
         const action = tokens[0];
@@ -19,7 +19,11 @@ module.exports = {
             if (typeof speakTTS === 'function') {
                 setTimeout(async () => {
                     try {
-                        const intro = await generateOnce("You just turned on voice conversation mode. Give a very short (1 sentence), sarcastic, and sassy greeting to the room.", botState);
+                        const intro = await generateOnce(
+                            'Voice mode is on. Give a sarcastic 2-sentence greeting to the room and ask what they want.',
+                            botState,
+                            { voice: true }
+                        );
                         if (intro) {
                             await speakTTS(intro, { force: true }).catch(() => { });
                         }
@@ -34,22 +38,24 @@ module.exports = {
             await sendMessage('👍');
         } else if (action === 'aria' || action === 'female') {
             botState.voiceAIVoice = 'aria';
+            botState.voiceAIPitch = '+0Hz';
+            botState.voiceAIRate = '-5%';
             await sendMessage('👍');
         } else if (action === 'pitch') {
             if (!subAction) {
                 return await sendMessage('👍');
             }
             if (subAction === 'baby' || subAction === 'cute') {
-                botState.voiceAIPitch = '+15Hz';
-                botState.voiceAIRate = '+10%';
+                botState.voiceAIPitch = '+10Hz';
+                botState.voiceAIRate = '+5%';
                 await sendMessage('👍');
             } else if (subAction === 'giant' || subAction === 'deep' || subAction === 'scary') {
                 botState.voiceAIPitch = '-15Hz';
                 botState.voiceAIRate = '-10%';
                 await sendMessage('👍');
-            } else if (subAction === 'normal' || subAction === 'reset') {
-                botState.voiceAIPitch = '+0Hz';
-                botState.voiceAIRate = '0%';
+            } else if (subAction === 'normal' || subAction === 'reset' || subAction === 'mature') {
+                botState.voiceAIPitch = '-5Hz';
+                botState.voiceAIRate = '-5%';
                 await sendMessage('👍');
             } else {
                 if (/^[+-]\d+hz$/i.test(subAction)) {
@@ -64,13 +70,13 @@ module.exports = {
                 return await sendMessage('👍');
             }
             if (subAction === 'fast' || subAction === 'rap') {
-                botState.voiceAIRate = '+30%';
+                botState.voiceAIRate = '+15%';
                 await sendMessage('👍');
             } else if (subAction === 'slow' || subAction === 'chill') {
-                botState.voiceAIRate = '-20%';
+                botState.voiceAIRate = '-15%';
                 await sendMessage('👍');
             } else if (subAction === 'normal' || subAction === 'reset') {
-                botState.voiceAIRate = '0%';
+                botState.voiceAIRate = '-5%';
                 await sendMessage('👍');
             } else {
                 if (/^[+-]\d+%$/i.test(subAction)) {
@@ -81,9 +87,9 @@ module.exports = {
                 }
             }
         } else if (action === 'reset' || action === 'clear') {
-            botState.voiceAIVoice = 'aria';
-            botState.voiceAIPitch = '+0Hz';
-            botState.voiceAIRate = '0%';
+            botState.voiceAIVoice = 'guy';
+            botState.voiceAIPitch = '-5Hz';
+            botState.voiceAIRate = '-5%';
             await sendMessage('👍');
         } else {
             botState.voiceAI = !botState.voiceAI;

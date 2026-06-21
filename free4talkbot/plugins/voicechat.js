@@ -48,8 +48,8 @@ module.exports = {
             if (enable) {
                 return await sendMessage(
                     `🎙️ *Talk Mode ACTIVE*\n` +
-                    `Bot will now respond to EVERYTHING said — no wake word needed.\n` +
-                    `8s cooldown per user to prevent spam.\n\n` +
+                    `Bot responds to everything — no wake word. Sarcastic interactive banter.\n` +
+                    `3s cooldown per user.\n\n` +
                     `Turn off: !talkmode off or !voice talk`
                 );
             } else {

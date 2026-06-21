@@ -117,6 +117,10 @@ let botState = {
     participants: [],  // [{uid, name, role}] — real-time room list
     aiMuteUntil: 0,   // timestamp ms; 0 = AI aktif, >now = AI di-mute (set via !ai off/sleep)
     voiceListenActive: true,  // Voice conversation mode (wake word listen via Groq STT)
+    voiceAI: false,
+    voiceAIVoice: 'guy',
+    voiceAIPitch: '-5Hz',
+    voiceAIRate: '-5%',
     autoPlay: true,    // Auto play related songs when queue is empty
     playHistory: []    // History of played songs to prevent autoplay from repeating
 };
@@ -501,6 +505,50 @@ async function triggerSarcasticWelcome(name) {
 // ════════════════════════════════════════════════════════════════════════════
 //  CHAT HANDLER
 // ════════════════════════════════════════════════════════════════════════════
+
+/** "play despacito", "play song X", "putar lagu X" → song query or null */
+function extractPlayQuery(text) {
+    const raw = String(text || '').trim();
+    if (!raw) return null;
+
+    const lower = raw.toLowerCase();
+    const exactAsk = ['play', 'play song', 'play music', 'putar lagu', 'putar musik', 'play a song', 'play a music'];
+    if (exactAsk.includes(lower)) return null;
+
+    // Optional wake prefix: "past play despacito"
+    const stripped = raw.replace(/^(past|gicell|gicellbot)\s+/i, '').trim();
+    const src = stripped || raw;
+
+    const patterns = [
+        /^play\s+(?:song|music|a\s+song|a\s+music)\s+(.+)$/i,
+        /^play\s+(.+)$/i,
+        /^putar\s+(?:lagu|musik)\s+(.+)$/i,
+        /^putar\s+(.+)$/i,
+        /^mainkan\s+(.+)$/i,
+    ];
+    for (const re of patterns) {
+        const m = src.match(re);
+        if (!m) continue;
+        const name = m[1].trim();
+        if (name.length < 2) continue;
+        const reject = new Set(['song', 'music', 'a song', 'a music', 'lagu', 'musik', 'something', 'anything']);
+        if (reject.has(name.toLowerCase())) continue;
+        return name;
+    }
+    return null;
+}
+
+function formatQueuedSongMessage(song, query, queuePos) {
+    const nextLine = queuePos === 1
+        ? "⏭️ It's **next** — plays right after the current song."
+        : `⏭️ Queue position **#${queuePos}**.`;
+    return (
+        `📝 **Added to queue:** ${song.title}\n` +
+        `${nextLine}\n` +
+        `💡 Want it **now**? Say **stop** then **play ${query}**`
+    );
+}
+
 async function handleChatMessage(chatData) {
 
     if (!chatData?.text) return;
@@ -547,6 +595,13 @@ async function handleChatMessage(chatData) {
                 await sendMessage(askMsg);
             }
             return;
+        }
+
+        // 2b. "play song name" in one message → !play
+        const playQuery = extractPlayQuery(chatData.text);
+        if (playQuery) {
+            chatData.text = `!play ${playQuery}`;
+            log(`[MUSIC STATE] Natural play → !play "${playQuery}"`, 'info');
         }
 
         // 3. Stop trigger detection
@@ -601,7 +656,7 @@ async function handleChatMessage(chatData) {
             if (isAIProcessing) return;
             isAIProcessing = true;
             try {
-                const reply = await askAI(chatData.text, chatData.senderName, botState);
+                const reply = await askAI(chatData.text, chatData.senderName, botState, { voice: botState.voiceAI });
                 if (reply) {
                     if (botState.voiceAI) {
                         await speakTTS(reply, { force: true }).catch(() => {});
@@ -625,7 +680,7 @@ async function handleChatMessage(chatData) {
         isAIProcessing = true;
         try {
             log(`[CHAT] ${chatData.senderName} (uid:${chatData.senderId}): ${chatData.text}`, 'info');
-            const reply = await askAI(chatData.text, chatData.senderName, botState);
+            const reply = await askAI(chatData.text, chatData.senderName, botState, { voice: botState.voiceAI });
             if (reply) {
                 const { cleanReply, command } = parseCommandFromAI(reply, chatData.text);
 
@@ -888,9 +943,9 @@ async function speakTTS(text, opts = {}) {
         }
 
         log(`[TTS] Generating: "${String(text).slice(0, 60)}${text.length > 60 ? '...' : ''}"`, 'info');
-        const selectedVoice = opts.voice || (botState && botState.voiceAIVoice) || 'aria';
-        const rate = opts.rate || (botState && botState.voiceAIRate) || '+10%';
-        const pitch = opts.pitch || (botState && botState.voiceAIPitch) || '+15Hz';
+        const selectedVoice = opts.voice || (botState && botState.voiceAIVoice) || 'guy';
+        const rate = opts.rate || (botState && botState.voiceAIRate) || '-5%';
+        const pitch = opts.pitch || (botState && botState.voiceAIPitch) || '-5Hz';
         const buf = await generateTTS(text, { ...opts, voice: selectedVoice, rate, pitch });
         const b64 = buf.toString('base64');
         log(`[TTS] Buffer ${(buf.length / 1024).toFixed(1)}KB ready, broadcasting...`, 'info');
@@ -1198,10 +1253,18 @@ async function processPendingSongRequests() {
 
                 if (botState.isPlaying) {
                     botState.queue.push(song);
-                    log(`Added to queue: ${song.title}`, 'success');
+                    const queuePos = botState.queue.length;
+                    log(`Added to queue (#${queuePos}): ${song.title}`, 'success');
                     updateStatus();
-                    await sendMessage(`📝 Added to queue (#${botState.queue.length}): ${song.title}`);
-                    if (botState.queue.length === 1) getStreamUrl(song.url).catch(() => { });
+                    const msg = formatQueuedSongMessage(song, request.query, queuePos);
+                    await sendMessage(msg);
+                    if (botState.voiceAI) {
+                        const tts = queuePos === 1
+                            ? `Added ${song.title} to the queue. It's next after this song. Say stop then play if you want it now.`
+                            : `Added ${song.title} to the queue, number ${queuePos}. Say stop then play if you want it now.`;
+                        await speakTTS(tts, { force: true }).catch(() => {});
+                    }
+                    if (queuePos === 1) getStreamUrl(song.url).catch(() => { });
                 } else {
                     await startStream(song);
                 }
@@ -1570,7 +1633,7 @@ async function startBot(config) {
                 }
 
                 const VAD_THRESHOLD = 12;     // RMS energy threshold (0-128 scale)
-                const SILENCE_MS = 800;    // silent for this long → utterance considered finished
+                const SILENCE_MS = 300;    // faster end-of-speech detection
                 const MAX_DURATION = 15000;  // max utterance 15 detik
                 const MIN_DURATION = 500;    // utterance < 500ms = noise, di-skip
 
@@ -2129,7 +2192,11 @@ async function startBot(config) {
         if (botState.voiceAI) {
             setTimeout(async () => {
                 try {
-                    const intro = await generateOnce("You just joined a voice room. Give a sarcastic, mocking, and sassy greeting to the people in the room. Keep it short (1-2 sentences).", botState);
+                    const intro = await generateOnce(
+                        'You just joined a voice room. Give a sarcastic, mocking 2-sentence greeting and ask what they want — sound like a sassy kid on mic.',
+                        botState,
+                        { voice: true }
+                    );
                     if (intro) {
                         await speakTTS(intro, { force: true }).catch(() => {});
                     }

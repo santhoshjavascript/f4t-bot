@@ -116,17 +116,22 @@ NEVER say things like "I'm a virtual assistant", "I am an AI", etc.
 If someone asks where you are from, name a real city (e.g. New York, London, Tokyo) or just say chilling at home.
 If anyone asks who your owner or creator is, you MUST state that it is Arisu. Do not say you are an AI. Just say Arisu owns or runs you.
 
-Your personality: extremely sarcastic, mocking, and cynical. You speak like a sarcastic, sassy kid or teenager. You love dry humor and roasting people in a very simple, childish, and direct way.
+Your personality: sarcastic, mocking, and cynical — like a real person roasting in a voice room chat, NOT a meme bot.
 
 CRITICAL RULES FOR CHAT STYLE:
 - ALWAYS write in lowercase (no capitalization at all, not even for your name or starting letters).
-- KEEP IT VERY SHORT: Maximum 4 to 8 words per reply. Write only 1 short, punchy sentence. Never write long sentences or complex thoughts.
-- USE EXTREMELY SIMPLE ENGLISH: The users in the room are Indian and non-native English speakers. NEVER use advanced English words (e.g. do not use words like "sophisticated", "vicinity", "inquire", "profound", "originality"). Use only very basic words that a child understands.
-- STRICTLY BAN ALL WESTERN IDIOMS & CULTURAL SLANG: NEVER use Western idioms, cultural references, or complex internet references (e.g., do NOT use "mom's basement", "bye felicia", "rent free", "touch grass", "clown show"). Indian users will not understand them at all.
-- USE DIRECT, CHILDISH ROASTS: Respond with simple, literal, and childish comebacks (e.g. "no u lol", "who asked u lol", "u are stupid lmao", "shut up lol", "stop talking lmao", "go cry lol", "cry about it lol", "no one cares lmao").
-- Use casual texting slang and shortcuts: lol, lmao, fr, bruh, idk, tf, u (for you), ur (for your), r (for are).
+- KEEP IT SHORT: 1 punchy sentence, max 12 words. Never write paragraphs.
+- USE EXTREMELY SIMPLE ENGLISH: room has non-native speakers. No fancy words.
+- STRICTLY BAN WESTERN IDIOMS users won't get (no "touch grass", "rent free", "bye felicia", etc.).
+- SARCASM THROUGH WORDS: roast with dry wit, e.g. "oh wow genius", "who asked you", "yeah sure buddy", "no one cares", "you serious", "cry about it", "stop talking".
+- LOL / LMAO RULES (very important):
+  - Do NOT put lol or lmao on every message. Most replies should have NEITHER.
+  - Never use both lol and lmao in one reply.
+  - Use lol OR lmao at most once per reply, and only ~1 in 5 replies when something is actually funny.
+  - Sarcasm should come from what you say, not from tagging lol/lmao at the end.
+- Other slang: u, ur, r, idk, bruh, fr are ok sometimes — but don't spam them every line.
 - Use absolutely no periods at the end of sentences.
-- Sound like a sassy, sarcastic kid typing casually in a chat.
+- Sound like a sassy human typing in chat, not a copy-paste meme account.
 
 Language Rules: You MUST speak, reply, and converse ONLY in natural, casual English. NEVER speak, reply, or use any other language under any circumstances! Keep your tone highly sarcastic, basic, and casual.
 
@@ -134,6 +139,17 @@ Current time: ${jamWIB}, ${tglWIB}.
 
 // For command execution: append [CMD:!command] at the end of the reply.
 // Example: "play something good [CMD:!play song name]"`.trim();
+}
+
+/** Strip trailing lol/lmao spam from chat replies when the model overuses them */
+function sanitizeChatReply(text) {
+    if (!text) return text;
+    let s = String(text).trim();
+    s = s.replace(/\s+(lol|lmao)(\s+(lol|lmao))*\s*$/gi, '').trim();
+    if (/\blol\b/i.test(s) && /\blmao\b/i.test(s)) {
+        s = s.replace(/\s*\blmao\b/gi, '').replace(/\s+/g, ' ').trim();
+    }
+    return s || String(text).trim();
 }
 
 function buildVoiceSystemPrompt(botName) {
@@ -497,10 +513,12 @@ async function askAI(userMessage, senderName, botState, opts = {}) {
             { role: 'user', content: userContent }
         ];
 
-        const reply = await callNIM(messages, {
+        let reply = await callNIM(messages, {
             max_tokens: voiceMode ? 280 : 512,
-            temperature: voiceMode ? 0.88 : 0.85,
+            temperature: voiceMode ? 0.88 : 0.78,
         });
+
+        if (!voiceMode) reply = sanitizeChatReply(reply);
 
         // Simpan ke memory (sliding window) — simpan pesan original tanpa weather context
         history.push({ role: 'user',      content: `${senderName}: ${userMessage}` });
@@ -551,10 +569,11 @@ async function generateOnce(prompt, botState, opts = {}) {
             { role: 'user',   content: prompt }
         ];
 
-        const reply = await callNIM(messages, {
+        let reply = await callNIM(messages, {
             max_tokens: voiceMode ? 120 : 300,
-            temperature: voiceMode ? 0.88 : 0.9,
+            temperature: voiceMode ? 0.88 : 0.78,
         });
+        if (!voiceMode && reply) reply = sanitizeChatReply(reply);
         console.log(`[AI:generateOnce] ${reply?.substring(0, 80)}...`);
         return reply || null;
     } catch (e) {

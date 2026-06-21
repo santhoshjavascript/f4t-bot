@@ -2,6 +2,7 @@
 const { chromium } = require('playwright');
 const path = require('path');
 const fs = require('fs');
+const os = require('os');
 const { execFile } = require('child_process');
 const { promisify } = require('util');
 const execFileAsync = promisify(execFile);
@@ -10,37 +11,45 @@ const { askAI, generateOnce, parseCommandFromAI } = require('./ai.js');
 const { generateTTS } = require('./tts.js');
 const { handlePeerUtterance, getVoiceStatus } = require('./voice.js');
 
-// ── yt-dlp: ambil direct stream URL ────────────────────────────────────────────
-// Cache: hindari re-fetch URL yang sama (YouTube stream URL valid ~4-6 jam)
+// ── yt-dlp: stream URL + local audio cache (local = smooth, no DASH stutter) ──
 const _streamUrlCache = new Map();  // videoUrl → { url, fetchedAt }
-const STREAM_CACHE_TTL = 4 * 60 * 60 * 1000; // 4 jam
-const _pendingFetches = new Map();  // dedup: cegah 2 call yt-dlp untuk URL yang sama
+const _localAudioCache = new Map(); // videoUrl → { path, fetchedAt }
+const STREAM_CACHE_TTL = 4 * 60 * 60 * 1000;
+const LOCAL_AUDIO_TTL  = 6 * 60 * 60 * 1000;
+const _pendingFetches = new Map();
+const _pendingDownloads = new Map();
+const AUDIO_CACHE_DIR = path.join(os.tmpdir(), 'f4tbot-audio');
+
+function ytdlpPath() {
+    return path.join(__dirname, 'node_modules', 'youtube-dl-exec', 'bin', 'yt-dlp.exe');
+}
+
+function pathToFileUrl(filePath) {
+    return 'file:///' + filePath.replace(/\\/g, '/');
+}
 
 async function getStreamUrl(videoUrl) {
-    // 1. Cache hit
     const cached = _streamUrlCache.get(videoUrl);
     if (cached && Date.now() - cached.fetchedAt < STREAM_CACHE_TTL) {
         console.log(`[MUSIC] Cache hit: ${videoUrl.slice(-20)}`);
         return cached.url;
     }
 
-    // 2. Dedup: if there is already a pending fetch for this URL, wait for it
     if (_pendingFetches.has(videoUrl)) {
         console.log(`[MUSIC] Dedup — waiting for pending fetch: ${videoUrl.slice(-20)}`);
         return _pendingFetches.get(videoUrl);
     }
 
-    // 3. Fetch baru
     const fetchPromise = (async () => {
         try {
-            const ytdlpPath = path.join(__dirname, 'node_modules', 'youtube-dl-exec', 'bin', 'yt-dlp.exe');
-            const { stdout } = await execFileAsync(ytdlpPath, [
-                // Format audio-only (lebih cepat, tidak perlu merge video)
-                '-f', '140/251/250/bestaudio/ba/18/best',
+            const { stdout } = await execFileAsync(ytdlpPath(), [
+                // Prefer progressive muxed stream (18) — HTML5 audio handles it better than DASH fragments
+                '-f', '18/ba[ext=m4a][protocol^=http]/ba/bestaudio[ext=m4a]/bestaudio/best',
                 '--get-url',
                 '--no-playlist',
                 '--no-warnings',
-                '--socket-timeout', '20',
+                '--socket-timeout', '30',
+                '--retries', '3',
                 '--extractor-args', 'youtube:player-client=android,web',
                 videoUrl
             ]);
@@ -57,13 +66,86 @@ async function getStreamUrl(videoUrl) {
     return fetchPromise;
 }
 
-// Pre-fetch stream URL di background (untuk next song di queue)
+/** Download audio to disk — eliminates DASH stutter in WebRTC mic pipeline */
+async function ensureLocalAudio(videoUrl) {
+    const cached = _localAudioCache.get(videoUrl);
+    if (cached && fs.existsSync(cached.path) && Date.now() - cached.fetchedAt < LOCAL_AUDIO_TTL) {
+        return cached.path;
+    }
+
+    const videoId = extractVideoId(videoUrl);
+    if (!videoId) return null;
+
+    fs.mkdirSync(AUDIO_CACHE_DIR, { recursive: true });
+    const existing = fs.readdirSync(AUDIO_CACHE_DIR).find(f => f.startsWith(videoId + '.'));
+    if (existing) {
+        const full = path.join(AUDIO_CACHE_DIR, existing);
+        _localAudioCache.set(videoUrl, { path: full, fetchedAt: Date.now() });
+        return full;
+    }
+
+    if (_pendingDownloads.has(videoUrl)) {
+        return _pendingDownloads.get(videoUrl);
+    }
+
+    const dlPromise = (async () => {
+        try {
+            const outBase = path.join(AUDIO_CACHE_DIR, videoId);
+            await execFileAsync(ytdlpPath(), [
+                '-f', 'bestaudio[ext=m4a]/bestaudio/best',
+                '-x', '--audio-format', 'm4a',
+                '-o', `${outBase}.%(ext)s`,
+                '--no-playlist',
+                '--no-part',
+                '--force-overwrites',
+                '--socket-timeout', '45',
+                '--retries', '3',
+                '--extractor-args', 'youtube:player-client=android,web',
+                videoUrl
+            ], { timeout: 120000 });
+            const file = fs.readdirSync(AUDIO_CACHE_DIR).find(f => f.startsWith(videoId + '.'));
+            if (!file) throw new Error('download produced no file');
+            const fullPath = path.join(AUDIO_CACHE_DIR, file);
+            _localAudioCache.set(videoUrl, { path: fullPath, fetchedAt: Date.now() });
+            return fullPath;
+        } finally {
+            _pendingDownloads.delete(videoUrl);
+        }
+    })();
+
+    _pendingDownloads.set(videoUrl, dlPromise);
+    return dlPromise;
+}
+
+/** Best playback source: cached local file (smooth), download if needed, stream fallback */
+async function resolvePlaybackSource(videoUrl) {
+    const videoId = extractVideoId(videoUrl);
+    if (videoId && fs.existsSync(AUDIO_CACHE_DIR)) {
+        const hit = fs.readdirSync(AUDIO_CACHE_DIR).find(f => f.startsWith(videoId + '.'));
+        if (hit) {
+            const full = path.join(AUDIO_CACHE_DIR, hit);
+            _localAudioCache.set(videoUrl, { path: full, fetchedAt: Date.now() });
+            return { type: 'file', src: pathToFileUrl(full) };
+        }
+    }
+
+    try {
+        const localPath = await ensureLocalAudio(videoUrl);
+        if (localPath) return { type: 'file', src: pathToFileUrl(localPath) };
+    } catch (e) {
+        console.warn(`[MUSIC] Local download failed, falling back to stream: ${e.message}`);
+    }
+
+    const url = await getStreamUrl(videoUrl);
+    return { type: 'url', src: url };
+}
+
 function preFetchNextSong() {
     if (botState.queue.length > 0) {
         const next = botState.queue[0];
-        if (next?.url && !_streamUrlCache.has(next.url) && !_pendingFetches.has(next.url)) {
+        if (next?.url && !_pendingDownloads.has(next.url)) {
             console.log(`[MUSIC] Pre-fetching next song: ${next.title}`);
-            getStreamUrl(next.url).catch(() => { });  // fire & forget
+            ensureLocalAudio(next.url).catch(() => { });
         }
     }
 }
@@ -493,7 +575,7 @@ function checkAIRelevance(text, botName = 'GicellBot', senderName = '', particip
 
 async function triggerSarcasticWelcome(name) {
     try {
-        const welcomeMsg = await generateOnce(`Someone named '${name}' has just joined the chat room. Write a very short (max 10 words), simple English, and highly sarcastic/sassy welcome message to them. You MUST start the message by tagging them like '@${name}' (e.g. '@${name} oh great another person lol').`, botState);
+        const welcomeMsg = await generateOnce(`Someone named '${name}' just joined the room. Write max 10 words, lowercase, sarcastic welcome tagging @${name}. No lol or lmao. Example: '@${name} oh great another one'`, botState);
         if (welcomeMsg) {
             await sendMessage(welcomeMsg);
         }
@@ -998,6 +1080,7 @@ function clearPendingSongRequests() {
 async function stopAudio() {
     if (page) {
         await page.evaluate(() => {
+            window._musicPlaying = false;
             if (window._audioElement) {
                 window._audioElement.pause();
                 window._audioElement.src = '';
@@ -1157,29 +1240,37 @@ async function startStream(song) {
 
     try {
         log(`[MUSIC] Fetching stream URL...`, 'info');
-        const [streamUrl] = await Promise.all([
-            getStreamUrl(song.url),
+        const [playback] = await Promise.all([
+            resolvePlaybackSource(song.url),
             unmuteMic()
         ]);
 
-        // Token berubah = ada skip/stop/play baru → batalkan ini
         if (myToken !== _streamToken) {
             log(`[MUSIC] Stream token mismatch (${myToken}≠${_streamToken}) — discarding stale stream.`, 'warn');
             return;
         }
 
-        await page.evaluate(async url => {
+        log(`[MUSIC] Playback source: ${playback.type}`, 'info');
+
+        await page.evaluate(async ({ src, isFile }) => {
             if (!window._audioElement) throw new Error('_audioElement not initialized');
 
             const audio = window._audioElement;
             audio.pause();
-            audio.src = '';
+            audio.removeAttribute('src');
+            audio.load();
             audio.volume = window._botVolume || 0.1;
+            audio.preload = 'auto';
+
+            if (window._audioCtx?.state === 'suspended') {
+                await window._audioCtx.resume().catch(() => { });
+            }
 
             await new Promise((resolve, reject) => {
                 let settled = false;
                 const cleanup = () => {
                     clearTimeout(timer);
+                    audio.removeEventListener('canplaythrough', onCanPlay);
                     audio.removeEventListener('playing', onPlaying);
                     audio.removeEventListener('error', onError);
                 };
@@ -1187,28 +1278,32 @@ async function startStream(song) {
                     if (settled) return;
                     settled = true;
                     cleanup();
+                    window._musicPlaying = true;
                     resolve();
                 };
                 const finishErr = (err) => {
                     if (settled) return;
                     settled = true;
                     cleanup();
+                    window._musicPlaying = false;
                     reject(err);
                 };
+                const onCanPlay = () => finishOk();
                 const onPlaying = () => finishOk();
                 const onError = () => finishErr(new Error('audio playback error'));
-                const timer = setTimeout(() => finishErr(new Error('audio start timeout')), 15000);
+                const timer = setTimeout(() => finishErr(new Error('audio start timeout')), 30000);
 
+                audio.addEventListener('canplaythrough', onCanPlay, { once: true });
                 audio.addEventListener('playing', onPlaying, { once: true });
                 audio.addEventListener('error', onError, { once: true });
-                audio.src = url;
+                audio.src = src;
 
                 const playPromise = audio.play();
                 if (playPromise && typeof playPromise.catch === 'function') {
                     playPromise.catch(err => finishErr(new Error(err?.message || 'audio play() failed')));
                 }
             });
-        }, streamUrl);
+        }, { src: playback.src, isFile: playback.type === 'file' });
         log(`[MUSIC] Playback started.`, 'success');
         log(`Now Playing: ${song.title} (Req: ${song.requestedBy})`, 'success');
         await sendMessage(`🎶 Now Playing: ${song.title}\n👤 Requested by: ${song.requestedBy}`);
@@ -1264,7 +1359,7 @@ async function processPendingSongRequests() {
                             : `Added ${song.title} to the queue, number ${queuePos}. Say stop then play if you want it now.`;
                         await speakTTS(tts, { force: true }).catch(() => {});
                     }
-                    if (queuePos === 1) getStreamUrl(song.url).catch(() => { });
+                    if (queuePos === 1) ensureLocalAudio(song.url).catch(() => { });
                 } else {
                     await startStream(song);
                 }
@@ -1354,7 +1449,7 @@ async function startBot(config) {
             '--safebrowsing-disable-auto-update',
             '--password-store=basic',
             '--use-mock-keychain',
-            '--js-flags=--max-old-space-size=256',  // limit V8 heap per tab
+            '--js-flags=--max-old-space-size=512',  // limit V8 heap per tab
         ];
 
         if (useProfile) {
@@ -1381,7 +1476,8 @@ async function startBot(config) {
 
         // ── InitScript 1: Audio pipeline + EQ ────────────────────────────────
         await context.addInitScript(() => {
-            window._audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+            window._musicPlaying = false;
+            window._audioCtx = new (window.AudioContext || window.webkitAudioContext)({ latencyHint: 'playback' });
             window._audioElement = document.createElement('audio');
             window._audioElement.crossOrigin = 'anonymous';
             window._audioElement.autoplay = true;
@@ -1393,11 +1489,25 @@ async function startBot(config) {
             const source = window._audioCtx.createMediaElementSource(window._audioElement);
             const dest = window._audioCtx.createMediaStreamDestination();
 
-            // Safe stall recovery: just nudge play(), never call load() which resets the stream
-            window._audioElement.addEventListener('stalled', () => {
-                window._audioElement.play().catch(() => { });
+            // Buffer underrun recovery — nudge play without resetting stream
+            window._lastPlaybackNudge = 0;
+            window._nudgePlayback = function () {
+                const a = window._audioElement;
+                if (!a || !a.src || a.ended) return;
+                const now = Date.now();
+                if (now - window._lastPlaybackNudge < 1200) return;
+                window._lastPlaybackNudge = now;
+                if (window._audioCtx?.state === 'suspended') window._audioCtx.resume().catch(() => { });
+                if (a.paused) { a.play().catch(() => { }); return; }
+                if (a.readyState < 3) a.play().catch(() => { });
+            };
+            ['stalled', 'waiting', 'suspend'].forEach(ev => {
+                window._audioElement.addEventListener(ev, () => window._nudgePlayback());
             });
-            window._audioElement.onended = () => window.onSongEnded();
+            window._audioElement.onended = () => {
+                window._musicPlaying = false;
+                window.onSongEnded();
+            };
 
             window._bassFilter = window._audioCtx.createBiquadFilter();
             window._bassFilter.type = 'lowshelf'; window._bassFilter.frequency.value = 200; window._bassFilter.gain.value = 0;
@@ -1437,7 +1547,7 @@ async function startBot(config) {
                 if (constraints.audio) return window._musicStream;
                 return null;
             };
-            setInterval(() => { if (window._audioCtx.state === 'suspended') window._audioCtx.resume(); }, 1000);
+            setInterval(() => { if (window._audioCtx.state === 'suspended') window._audioCtx.resume(); }, 2000);
 
             // ── Mic Guardian ──────────────────────────────────────────────────
             // Automatically unmutes if muted by owner or moderator
@@ -1654,7 +1764,8 @@ async function startBot(config) {
                 function startRecord() {
                     if (recorder) return;
                     if (!window._voiceListenActive) return;
-                    if (window._ttsActive) return;  // bot sedang ngomong → skip
+                    if (window._musicPlaying) return;  // skip STT while music plays — saves CPU
+                    if (window._ttsActive) return;
                     try {
                         recorder = new MediaRecorder(stream, {
                             mimeType: 'audio/webm; codecs=opus',
@@ -1705,6 +1816,10 @@ async function startBot(config) {
                 function vadLoop() {
                     if (stopped) return;
                     if (!window._voicePeers.has(track.id)) return;
+                    if (window._musicPlaying) {
+                        setTimeout(vadLoop, 200);
+                        return;
+                    }
                     try {
                         analyser.getByteTimeDomainData(dataBuf);
                         let sum = 0;

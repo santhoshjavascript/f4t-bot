@@ -163,6 +163,7 @@ module.exports = async function handleCommand(msg, { botState, sendMessage, addT
         botState.isRepeating = false;
         botState.isPlaying = false;
         if (page) await page.evaluate(() => {
+            window._musicPlaying = false;
             if (window._audioElement) { window._audioElement.pause(); window._audioElement.src = ''; }
         }).catch(() => { });
         await playNext();
@@ -174,6 +175,7 @@ module.exports = async function handleCommand(msg, { botState, sendMessage, addT
         botState.isPlaying = false;
         botState.currentSong = null;
         if (page) await page.evaluate(() => {
+            window._musicPlaying = false;
             if (window._audioElement) { window._audioElement.pause(); window._audioElement.src = ''; }
         }).catch(() => { });
         log(`Stopped & Queue cleared (by ${sender.name}).`, 'warn');

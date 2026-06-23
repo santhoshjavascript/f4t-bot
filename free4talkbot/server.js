@@ -121,7 +121,17 @@ async function ensureLocalAudio(videoUrl) {
     return dlPromise;
 }
 
-/** Best playback source: cached local file (smooth), download if needed, stream fallback */
+/**
+ * Best playback source — optimized for FAST start:
+ *   1. If the song is already cached on disk → play the local file (instant + smooth).
+ *   2. Otherwise → fetch only the stream URL (quick) and start streaming right away,
+ *      while downloading the full file in the BACKGROUND for smooth replays later.
+ *
+ * Streaming works through the Web Audio pipeline because Chromium runs with
+ * `--disable-web-security`, so cross-origin googlevideo URLs are not tainted.
+ * We prioritize the progressive `itag 18` format (see getStreamUrl) which streams
+ * smoothly without DASH stutter, so there's no need to wait for a full download.
+ */
 async function resolvePlaybackSource(videoUrl) {
     const videoId = extractVideoId(videoUrl);
     if (videoId && fs.existsSync(AUDIO_CACHE_DIR)) {
@@ -133,14 +143,9 @@ async function resolvePlaybackSource(videoUrl) {
         }
     }
 
-    try {
-        const localPath = await ensureLocalAudio(videoUrl);
-        if (localPath) return { type: 'file', src: pathToFileUrl(localPath) };
-    } catch (e) {
-        console.warn(`[MUSIC] Local download failed, falling back to stream: ${e.message}`);
-    }
-
+    // Not cached yet → stream immediately (fast), cache in the background.
     const url = await getStreamUrl(videoUrl);
+    ensureLocalAudio(videoUrl).catch(() => { }); // background download for next time
     return { type: 'url', src: url };
 }
 

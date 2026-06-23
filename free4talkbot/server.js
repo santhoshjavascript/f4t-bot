@@ -91,9 +91,13 @@ async function ensureLocalAudio(videoUrl) {
     const dlPromise = (async () => {
         try {
             const outBase = path.join(AUDIO_CACHE_DIR, videoId);
+            // Download audio in its native, browser-playable container (m4a/mp4/webm).
+            // NOTE: do NOT use `-x --audio-format` here — that re-encode step requires
+            // ffmpeg, which is not bundled. Chromium plays m4a/mp4/webm-opus directly,
+            // so a plain download (no post-processing) is all we need and avoids the
+            // "ffprobe and ffmpeg not found" failure that broke playback for every song.
             await execFileAsync(ytdlpPath(), [
-                '-f', 'bestaudio[ext=m4a]/bestaudio/best',
-                '-x', '--audio-format', 'm4a',
+                '-f', 'ba[ext=m4a]/18/ba[ext=webm]/bestaudio/best',
                 '-o', `${outBase}.%(ext)s`,
                 '--no-playlist',
                 '--no-part',
